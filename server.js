@@ -91,7 +91,7 @@ app.prepare().then(() => {
     });
   });
 
-  httpServer.listen(3000, () => {
-    console.log("🚀 Server running on http://localhost:3000");
+  httpServer.listen(process.env.NEXT_PUBLIC_PORT, () => {
+    console.log(`🚀 Server running on ${process.env.NEXT_PUBLIC_BASE_URL}`);
   });
 });
