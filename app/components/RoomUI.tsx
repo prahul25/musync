@@ -14,7 +14,22 @@ export default function RoomUI({ roomId }: { roomId: string }) {
   // --- Role detection ---
   // The creator of the room is the host. Everyone else joining via link is a listener.
   // We store this in sessionStorage so a refresh keeps role intact.
-  const [role, setRole] = useState<"host" | "listener" | null>(null);
+  const [role] = useState<"host" | "listener" | null>(() => {
+  if (typeof window === "undefined") return null;
+
+  const stored = sessionStorage.getItem(`musync-role-${roomId}`);
+
+  if (stored === "host" || stored === "listener") {
+    return stored;
+  }
+
+  const created = sessionStorage.getItem(`musync-created-${roomId}`);
+  const r = created ? "host" : "listener";
+
+  sessionStorage.setItem(`musync-role-${roomId}`, r);
+
+  return r;
+});
   const [isSharing, setIsSharing] = useState(false);
   const [isSynced, setIsSynced] = useState(false);
   const [listenerCount, setListenerCount] = useState(0);
@@ -26,7 +41,7 @@ export default function RoomUI({ roomId }: { roomId: string }) {
   const audioRef = useRef<HTMLAudioElement>(null);
   // host keeps a map of listener socketId → RTCPeerConnection
   const peerConnections = useRef<Record<string, RTCPeerConnection>>({});
-
+  const pendingListeners = useRef<string[]>([]);
   const roomLink =
     typeof window !== "undefined"
       ? `${window.location.origin}/room/${roomId}`
@@ -61,19 +76,6 @@ export default function RoomUI({ roomId }: { roomId: string }) {
     []
   );
 
-  // --- Detect role on mount ---
-  useEffect(() => {
-    const stored = sessionStorage.getItem(`musync-role-${roomId}`);
-    if (stored === "host" || stored === "listener") {
-      setRole(stored);
-    } else {
-      // First visit to this room ID — check if we originated here
-      const created = sessionStorage.getItem(`musync-created-${roomId}`);
-      const r = created ? "host" : "listener";
-      sessionStorage.setItem(`musync-role-${roomId}`, r);
-      setRole(r);
-    }
-  }, [roomId]);
 
   // --- Socket & WebRTC setup ---
   useEffect(() => {
@@ -107,7 +109,7 @@ export default function RoomUI({ roomId }: { roomId: string }) {
     socket.on("all-listeners", (listeners: string[]) => {
       if (role !== "host") return;
       // Will be used after startSharing — stored but not acted on until stream exists
-      (socket as any)._pendingListeners = listeners;
+      pendingListeners.current = listeners;
     });
 
     // HOST: clean up when listener disconnects
@@ -160,7 +162,7 @@ export default function RoomUI({ roomId }: { roomId: string }) {
       peerConnections.current = {};
       localStream.current?.getTracks().forEach((t) => t.stop());
     };
-  }, [role, roomId]);
+  }, [role, roomId,createPeerConnection]);
 
  
 
@@ -203,7 +205,7 @@ export default function RoomUI({ roomId }: { roomId: string }) {
 
       // Also send offers to any listeners who joined before sharing started
       const socket = getSocket();
-      const pending = (socket as any)._pendingListeners ?? [];
+      const pending = pendingListeners.current;
       for (const listenerId of pending) {
       const pc = createPeerConnection(listenerId);
       audioOnlyStream.getTracks().forEach((track) =>
@@ -213,7 +215,7 @@ export default function RoomUI({ roomId }: { roomId: string }) {
       await pc.setLocalDescription(offer);
       socket.emit("offer", { target: listenerId, sdp: offer });
     }
-      (socket as any)._pendingListeners = [];
+      pendingListeners.current = [];
 
       // When user stops sharing from the browser's built-in stop button
     audioOnlyStream.getAudioTracks()[0].onended = () => {
@@ -221,14 +223,11 @@ export default function RoomUI({ roomId }: { roomId: string }) {
       localStream.current = null;
       setStatusMsg("Audio sharing stopped.");
     };
-    } catch (err: any) {
-    if (err.name === "NotAllowedError") {
-      setStatusMsg("❌ Permission denied. Please allow screen sharing.");
-    } else if (err.name === "NotSupportedError") {
-      setStatusMsg("❌ Not supported in this browser. Please use Chrome.");
-    } else {
-      setStatusMsg(`❌ Error: ${err.message}`);
-    }
+    } catch (err) {
+      if (err instanceof Error) {
+    setStatusMsg(`❌ Error: ${err.message}`);
+  }
+    
     console.error(err);
   }
   };
