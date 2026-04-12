@@ -91,7 +91,7 @@ app.prepare().then(() => {
     });
   });
 
-  httpServer.listen(process.env.NEXT_PUBLIC_PORT, () => {
-    console.log(`🚀 Server running on ${process.env.NEXT_PUBLIC_BASE_URL}`);
+  httpServer.listen(process.env.PORT, () => {
+    console.log(`🚀 Server running on ${process.env.PORT}`);
   });
 });
