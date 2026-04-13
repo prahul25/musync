@@ -96,9 +96,7 @@ socket.onAny(() => {
       socket.data.roomId = roomId;
       socket.data.role = role;
 
-      if (!rooms[roomId]) {
-        rooms[roomId] = { host: null, listeners: new Set() };
-      }
+  
 
       if (role === "host") {
         rooms[roomId].host = socket.id;
